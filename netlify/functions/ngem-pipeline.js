@@ -36,7 +36,8 @@ const SAMPLE_BIDS = [
   { id: 'nv-012', title: 'Temporary Staffing — Administrative Support', agency: 'State of Nevada — Purchasing Division', category_code: '961', category: 'Staffing & Temporary Services', city: 'Carson City', county: 'Carson City', posted_days_ago: 4, due_in_days: 11, solicitation_no: 'NV-PUR-26-0204' },
 ];
 
-const SITE_URL = 'https://stategen.aproposgroupllc.com';
+const SITE_URL    = 'https://stategen.aproposgroupllc.com';
+const NGEM_PORTAL = 'https://www.ngemnv.com/'; // interim deep-link target; real ingest carries per-bid URLs
 
 async function fetchNgemBids() {
   // TODO(go-live): replace with the real NGEM read (internal JSON or scrape of
@@ -61,7 +62,10 @@ exports.handler = async (event) => {
         ...b,
         status: 'Open',
         due_date: isoFromDaysOut(b.due_in_days),
-        url: b.url || (SITE_URL + '/bid/' + encodeURIComponent(b.id)),
+        // Deep link to the live solicitation on NGEM (the StateGen equivalent of CapGen's
+        // "View on SAM.gov"). Real ingest will carry each bid's true NGEM URL; until then,
+        // route to the NGEM portal so the link always lands somewhere valid.
+        url: b.url || NGEM_PORTAL,
       }))
       .sort((a, b) => a.due_in_days - b.due_in_days);
 

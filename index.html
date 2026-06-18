@@ -82,7 +82,13 @@ tbody td{padding:.85rem 1rem;border-bottom:1px solid var(--line);color:var(--sil
 tbody tr:last-child td{border-bottom:none}
 tbody tr:hover{background:rgba(52,211,153,.04)}
 .t-title{color:var(--white);font-weight:600}
+a.t-link{color:var(--white)}
+a.t-link:hover .t-title{color:var(--accent)}
+a.t-link .ext{color:var(--muted);font-size:.78em}
 .t-sol{font-family:var(--mono);font-size:.7rem;color:var(--muted);margin-top:.2rem}
+.view-btn{display:inline-flex;align-items:center;gap:.35rem;font-family:var(--mono);font-size:.66rem;letter-spacing:.04em;
+  color:var(--accent);border:1px solid rgba(52,211,153,.34);background:rgba(52,211,153,.07);border-radius:8px;padding:.4rem .7rem;white-space:nowrap;transition:.15s}
+.view-btn:hover{background:rgba(52,211,153,.16);border-color:var(--accent);color:var(--white)}
 .t-cat{font-family:var(--mono);font-size:.78rem}
 .t-cat .code{color:var(--gold)}
 .chip{display:inline-block;font-family:var(--mono);font-size:.62rem;padding:.22rem .6rem;border-radius:999px;border:1px solid var(--line2);white-space:nowrap}
@@ -173,9 +179,9 @@ tbody tr:hover{background:rgba(52,211,153,.04)}
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>Solicitation</th><th>Agency</th><th>Category (NIGP)</th><th>Location</th><th>Closes</th></tr>
+          <tr><th>Solicitation</th><th>Agency</th><th>Category (NIGP)</th><th>Location</th><th>Closes</th><th>Details</th></tr>
         </thead>
-        <tbody id="rows"><tr><td colspan="5" class="empty">Loading open Nevada bids…</td></tr></tbody>
+        <tbody id="rows"><tr><td colspan="6" class="empty">Loading open Nevada bids…</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -238,15 +244,17 @@ function render(){
     if(term){ const hay=(b.title+' '+b.agency+' '+b.solicitation_no+' '+b.category).toLowerCase(); if(!hay.includes(term)) return false; }
     return true;
   });
-  q('rows').innerHTML = rows.length ? rows.map(b=>(
-    '<tr>'+
-      '<td><div class="t-title">'+esc(b.title)+'</div><div class="t-sol">'+esc(b.solicitation_no)+'</div></td>'+
+  q('rows').innerHTML = rows.length ? rows.map(b=>{
+    const url = b.url || 'https://www.ngemnv.com/';
+    return '<tr>'+
+      '<td><a class="t-link" href="'+esc(url)+'" target="_blank" rel="noopener"><span class="t-title">'+esc(b.title)+'</span> <span class="ext">↗</span></a><div class="t-sol">'+esc(b.solicitation_no)+'</div></td>'+
       '<td>'+esc(b.agency)+'</td>'+
       '<td class="t-cat"><span class="code">'+esc(b.category_code)+'</span> · '+esc(b.category)+'</td>'+
       '<td>'+esc(b.city)+', NV</td>'+
       '<td>'+dueChip(b.due_in_days)+'</td>'+
-    '</tr>'
-  )).join('') : '<tr><td colspan="5" class="empty">No open bids match these filters.</td></tr>';
+      '<td><a class="view-btn" href="'+esc(url)+'" target="_blank" rel="noopener">View on NGEM ↗</a></td>'+
+    '</tr>';
+  }).join('') : '<tr><td colspan="6" class="empty">No open bids match these filters.</td></tr>';
 }
 
 function setStats(){
