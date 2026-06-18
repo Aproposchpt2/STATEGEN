@@ -163,8 +163,8 @@ a.t-link .ext{color:var(--muted);font-size:.78em}
       <label>Agency
         <select id="fAgency"><option value="">All agencies</option></select>
       </label>
-      <label>Category
-        <select id="fCategory"><option value="">All categories</option></select>
+      <label>Type
+        <select id="fType"><option value="">All types</option></select>
       </label>
       <label>Closing within
         <select id="fDue">
@@ -179,17 +179,17 @@ a.t-link .ext{color:var(--muted);font-size:.78em}
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>Solicitation</th><th>Agency</th><th>Category (NIGP)</th><th>Location</th><th>Closes</th><th>Details</th></tr>
+          <tr><th>Solicitation</th><th>Agency</th><th>Type</th><th>Closes</th><th>Details</th></tr>
         </thead>
-        <tbody id="rows"><tr><td colspan="6" class="empty">Loading open Nevada bids…</td></tr></tbody>
+        <tbody id="rows"><tr><td colspan="5" class="empty">Loading open Nevada bids…</td></tr></tbody>
       </table>
     </div>
   </section>
 
   <section class="how" id="how">
-    <div class="step"><div class="n">01</div><h3>Tell us your work</h3><p>Pick the NIGP categories that describe your business. No SAM.gov, no UEI, no federal registration needed.</p></div>
-    <div class="step"><div class="n">02</div><h3>We match the bids</h3><p>StateGen pulls open Nevada solicitations from NGEM and surfaces the ones in your categories — across state, county, city, school, and university buyers.</p></div>
-    <div class="step"><div class="n">03</div><h3>You bid with lead time</h3><p>See what's closing soon, sort by deadline, and never miss a local opportunity you were eligible to win.</p></div>
+    <div class="step"><div class="n">01</div><h3>One board, every agency</h3><p>StateGen pulls every open Nevada solicitation from NGEM into one place — across the participating state, county, city, school, and university buyers. No SAM.gov, no UEI, no federal registration needed.</p></div>
+    <div class="step"><div class="n">02</div><h3>Filter to what fits</h3><p>Search by agency, bid type, and closing window to zero in on the work you can actually win.</p></div>
+    <div class="step"><div class="n">03</div><h3>Bid with lead time</h3><p>Open any solicitation straight on NGEM and respond before it closes — never miss a local opportunity again.</p></div>
   </section>
 
   <footer class="foot">
@@ -205,14 +205,10 @@ document.getElementById('yr').textContent = new Date().getFullYear();
 
 // Fallback sample so the page works even before the function is live (e.g. opened locally).
 const FALLBACK = { scanMode:'sample', bids:[
-  {id:'nv-003',title:'Citywide Park Landscape Maintenance',agency:'City of Las Vegas',category_code:'988',category:'Landscaping & Grounds',city:'Las Vegas',county:'Clark',due_in_days:9,solicitation_no:'COLV-PR-26-007'},
-  {id:'nv-009',title:'Water Pipeline Inspection Services',agency:'Las Vegas Valley Water District',category_code:'968',category:'Utility Services',city:'Las Vegas',county:'Clark',due_in_days:7,solicitation_no:'LVVWD-OPS-26-058'},
-  {id:'nv-002',title:'Enterprise Network Infrastructure Upgrade',agency:'Clark County',category_code:'920',category:'Data Processing & IT Services',city:'Las Vegas',county:'Clark',due_in_days:14,solicitation_no:'CC-IT-2026-044'},
-  {id:'nv-007',title:'Campus Security & Patrol Services',agency:'Nevada System of Higher Education',category_code:'990',category:'Security & Protective Services',city:'Reno',county:'Washoe',due_in_days:12,solicitation_no:'NSHE-SEC-26-009'},
-  {id:'nv-006',title:'On-Call Professional Engineering Services',agency:'Washoe County',category_code:'925',category:'Engineering Services',city:'Reno',county:'Washoe',due_in_days:18,solicitation_no:'WC-ENG-2026-012'},
-  {id:'nv-001',title:'Statewide Janitorial & Custodial Services',agency:'State of Nevada — Purchasing Division',category_code:'910',category:'Building Maintenance & Repair',city:'Carson City',county:'Carson City',due_in_days:21,solicitation_no:'NV-PUR-25-1180'},
-  {id:'nv-005',title:'Arterial Road Resurfacing — Phase II',agency:'City of Henderson',category_code:'913',category:'Roads & Construction',city:'Henderson',county:'Clark',due_in_days:25,solicitation_no:'COH-PW-26-031'},
-  {id:'nv-010',title:'Marketing & Public Communications Consulting',agency:'City of Reno',category_code:'915',category:'Communications & PR',city:'Reno',county:'Washoe',due_in_days:28,solicitation_no:'COR-COM-2026-014'}
+  {id:'s1',solicitation_no:'COLV-PR-26-007',title:'Citywide Park Landscape Maintenance',bid_type:'BID',agency:'City of Las Vegas, Nevada',close_date:'6/26/2026 01:30 PM (PT)',due_in_days:9,url:'https://nevada.ionwave.net/SourcingEvents.aspx?SourceType=1'},
+  {id:'s2',solicitation_no:'CC-IT-2026-044',title:'Enterprise Network Infrastructure Upgrade',bid_type:'BID',agency:'Clark County, Nevada',close_date:'7/1/2026 10:00 AM (PT)',due_in_days:14,url:'https://nevada.ionwave.net/SourcingEvents.aspx?SourceType=1'},
+  {id:'s3',solicitation_no:'NSHE-SEC-26-009',title:'Campus Security & Patrol Services',bid_type:'RFP',agency:'UNLV (NSHE-Business Center South)',close_date:'6/29/2026 02:00 PM (PT)',due_in_days:12,url:'https://nevada.ionwave.net/SourcingEvents.aspx?SourceType=1'},
+  {id:'s4',solicitation_no:'NV-PUR-26-0204',title:'Temporary Staffing — Administrative Support',bid_type:'RFP',agency:'State of Nevada — Purchasing Division',close_date:'6/28/2026 02:00 PM (PT)',due_in_days:11,url:'https://nevada.ionwave.net/SourcingEvents.aspx?SourceType=1'}
 ]};
 
 let ALL = [];
@@ -220,41 +216,41 @@ const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
 const q = id => document.getElementById(id);
 
 function dueChip(d){
+  if(d==null) return '<span class="chip">Open</span>';
   const cls = d<=7?'hot':d<=14?'warm':'ok';
-  const lbl = d<=0?'Closed':d===1?'1 day left':d+' days left';
+  const lbl = d<=0?'Closing today':d===1?'1 day left':d+' days left';
   return '<span class="chip '+cls+'">'+lbl+'</span>';
 }
 
 function hydrateFilters(){
   const agencies = [...new Set(ALL.map(b=>b.agency))].sort();
-  const cats = [...new Set(ALL.map(b=>b.category))].sort();
+  const types = [...new Set(ALL.map(b=>b.bid_type))].sort();
   q('fAgency').insertAdjacentHTML('beforeend', agencies.map(a=>'<option>'+esc(a)+'</option>').join(''));
-  q('fCategory').insertAdjacentHTML('beforeend', cats.map(c=>'<option>'+esc(c)+'</option>').join(''));
+  q('fType').insertAdjacentHTML('beforeend', types.map(t=>'<option>'+esc(t)+'</option>').join(''));
 }
 
 function render(){
   const term = q('fSearch').value.trim().toLowerCase();
   const agency = q('fAgency').value;
-  const cat = q('fCategory').value;
+  const type = q('fType').value;
   const due = Number(q('fDue').value);
   const rows = ALL.filter(b=>{
     if(agency && b.agency!==agency) return false;
-    if(cat && b.category!==cat) return false;
-    if(due && b.due_in_days>due) return false;
-    if(term){ const hay=(b.title+' '+b.agency+' '+b.solicitation_no+' '+b.category).toLowerCase(); if(!hay.includes(term)) return false; }
+    if(type && b.bid_type!==type) return false;
+    if(due && b.due_in_days!=null && b.due_in_days>due) return false;
+    if(term){ const hay=(b.title+' '+b.agency+' '+b.solicitation_no+' '+b.bid_type).toLowerCase(); if(!hay.includes(term)) return false; }
     return true;
   });
   q('rows').innerHTML = rows.length ? rows.map(b=>{
-    const url = b.url || 'https://www.ngemnv.com/';
+    const url = b.url || 'https://nevada.ionwave.net/SourcingEvents.aspx?SourceType=1';
     return '<tr>'+
       '<td><a class="t-link" href="'+esc(url)+'" target="_blank" rel="noopener"><span class="t-title">'+esc(b.title)+'</span> <span class="ext">↗</span></a><div class="t-sol">'+esc(b.solicitation_no)+'</div></td>'+
       '<td>'+esc(b.agency)+'</td>'+
-      '<td class="t-cat"><span class="code">'+esc(b.category_code)+'</span> · '+esc(b.category)+'</td>'+
-      '<td>'+esc(b.city)+', NV</td>'+
-      '<td>'+dueChip(b.due_in_days)+'</td>'+
+      '<td class="t-cat">'+esc(b.bid_type)+'</td>'+
+      '<td>'+dueChip(b.due_in_days)+(b.close_date?'<div class="t-sol">'+esc(b.close_date)+'</div>':'')+'</td>'+
       '<td><a class="view-btn" href="'+esc(url)+'" target="_blank" rel="noopener">View on NGEM ↗</a></td>'+
     '</tr>';
-  }).join('') : '<tr><td colspan="6" class="empty">No open bids match these filters.</td></tr>';
+  }).join('') : '<tr><td colspan="5" class="empty">No open bids match these filters.</td></tr>';
 }
 
 function setStats(){
@@ -273,7 +269,7 @@ async function init(){
   ALL = (data.bids||[]).slice().sort((a,b)=>a.due_in_days-b.due_in_days);
   q('modeTag').textContent = (data.scanMode==='live'?'Live data':'Sample data') + ' · updated daily';
   hydrateFilters(); setStats(); render();
-  ['fSearch','fAgency','fCategory','fDue'].forEach(id=>{
+  ['fSearch','fAgency','fType','fDue'].forEach(id=>{
     const el=q(id); el.addEventListener(id==='fSearch'?'input':'change', render);
   });
 }

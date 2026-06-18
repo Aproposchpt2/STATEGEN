@@ -2,86 +2,124 @@
 // StateGen — NGEM (Nevada Government eMarketplace) ingest adapter.
 // GET → returns open Nevada state/local solicitations in a normalized shape.
 //
-// STATUS: SAMPLE MODE. fetchNgemBids() currently returns a representative
-// Nevada bid set so the live site is fully functional. To go live, replace
-// the body of fetchNgemBids() with the real NGEM read — either:
-//   (a) NGEM's internal JSON endpoint (the call its public bid-list page makes), or
-//   (b) an HTML scrape of the public open-solicitations list.
-// No API key is required as long as NGEM exposes open bids without login.
-// Everything downstream (filtering, rendering) consumes the normalized shape below.
+// LIVE: NGEM runs on Ionwave (nevada.ionwave.net). Its public "Current Bids" list
+// (SourcingEvents.aspx?SourceType=1) is viewable without login — a single GET with a
+// browser User-Agent returns the full Telerik grid. We scrape and normalize it.
+// If the live read fails for any reason, we fall back to a sample set so the site stays up.
+
+const LIST_URL = 'https://nevada.ionwave.net/SourcingEvents.aspx?SourceType=1'; // public current bids
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
 const CORS = {
   'Content-Type': 'application/json',
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
-  'Cache-Control': 'no-store',
+  'Cache-Control': 'public, max-age=300',
 };
 
-// Normalized opportunity shape (source-agnostic — mirrors CapGen's pattern):
-// { id, title, agency, category_code, category, city, county, posted_days_ago,
-//   due_in_days, solicitation_no, url, status }
+// Normalized opportunity shape (source-agnostic):
+// { id, solicitation_no, title, bid_type, agency, issue_date, close_date, due_in_days, url, status }
 const SAMPLE_BIDS = [
-  { id: 'nv-001', title: 'Statewide Janitorial & Custodial Services', agency: 'State of Nevada — Purchasing Division', category_code: '910', category: 'Building Maintenance & Repair', city: 'Carson City', county: 'Carson City', posted_days_ago: 4, due_in_days: 21, solicitation_no: 'NV-PUR-25-1180' },
-  { id: 'nv-002', title: 'Enterprise Network Infrastructure Upgrade', agency: 'Clark County', category_code: '920', category: 'Data Processing & IT Services', city: 'Las Vegas', county: 'Clark', posted_days_ago: 6, due_in_days: 14, solicitation_no: 'CC-IT-2026-044' },
-  { id: 'nv-003', title: 'Citywide Park Landscape Maintenance', agency: 'City of Las Vegas', category_code: '988', category: 'Landscaping & Grounds', city: 'Las Vegas', county: 'Clark', posted_days_ago: 2, due_in_days: 9, solicitation_no: 'COLV-PR-26-007' },
-  { id: 'nv-004', title: 'Student Transportation Routing Software', agency: 'Clark County School District', category_code: '920', category: 'Data Processing & IT Services', city: 'Las Vegas', county: 'Clark', posted_days_ago: 9, due_in_days: 30, solicitation_no: 'CCSD-TS-2026-118' },
-  { id: 'nv-005', title: 'Arterial Road Resurfacing — Phase II', agency: 'City of Henderson', category_code: '913', category: 'Roads & Construction', city: 'Henderson', county: 'Clark', posted_days_ago: 5, due_in_days: 25, solicitation_no: 'COH-PW-26-031' },
-  { id: 'nv-006', title: 'On-Call Professional Engineering Services', agency: 'Washoe County', category_code: '925', category: 'Engineering Services', city: 'Reno', county: 'Washoe', posted_days_ago: 7, due_in_days: 18, solicitation_no: 'WC-ENG-2026-012' },
-  { id: 'nv-007', title: 'Campus Security & Patrol Services', agency: 'Nevada System of Higher Education', category_code: '990', category: 'Security & Protective Services', city: 'Reno', county: 'Washoe', posted_days_ago: 3, due_in_days: 12, solicitation_no: 'NSHE-SEC-26-009' },
-  { id: 'nv-008', title: 'Bus Shelter Fabrication & Installation', agency: 'RTC of Southern Nevada', category_code: '550', category: 'Fabrication & Metalwork', city: 'Las Vegas', county: 'Clark', posted_days_ago: 8, due_in_days: 16, solicitation_no: 'RTC-FAB-2026-022' },
-  { id: 'nv-009', title: 'Water Pipeline Inspection Services', agency: 'Las Vegas Valley Water District', category_code: '968', category: 'Utility Services', city: 'Las Vegas', county: 'Clark', posted_days_ago: 1, due_in_days: 7, solicitation_no: 'LVVWD-OPS-26-058' },
-  { id: 'nv-010', title: 'Marketing & Public Communications Consulting', agency: 'City of Reno', category_code: '915', category: 'Communications & PR', city: 'Reno', county: 'Washoe', posted_days_ago: 6, due_in_days: 28, solicitation_no: 'COR-COM-2026-014' },
-  { id: 'nv-011', title: 'HVAC Preventative Maintenance — County Facilities', agency: 'Clark County', category_code: '031', category: 'HVAC & Mechanical', city: 'Las Vegas', county: 'Clark', posted_days_ago: 10, due_in_days: 19, solicitation_no: 'CC-FAC-2026-071' },
-  { id: 'nv-012', title: 'Temporary Staffing — Administrative Support', agency: 'State of Nevada — Purchasing Division', category_code: '961', category: 'Staffing & Temporary Services', city: 'Carson City', county: 'Carson City', posted_days_ago: 4, due_in_days: 11, solicitation_no: 'NV-PUR-26-0204' },
+  { solicitation_no: 'NV-PUR-26-0204', title: 'Temporary Staffing — Administrative Support', bid_type: 'RFP', agency: 'State of Nevada — Purchasing Division', issue_date: '6/10/2026', close_date: '6/28/2026 02:00 PM (PT)', due_in_days: 11 },
+  { solicitation_no: 'CC-IT-2026-044', title: 'Enterprise Network Infrastructure Upgrade', bid_type: 'BID', agency: 'Clark County, Nevada', issue_date: '6/8/2026', close_date: '7/1/2026 10:00 AM (PT)', due_in_days: 14 },
+  { solicitation_no: 'COLV-PR-26-007', title: 'Citywide Park Landscape Maintenance', bid_type: 'BID', agency: 'City of Las Vegas, Nevada', issue_date: '6/12/2026', close_date: '6/26/2026 01:30 PM (PT)', due_in_days: 9 },
 ];
 
-const SITE_URL    = 'https://stategen.aproposgroupllc.com';
-const NGEM_PORTAL = 'https://www.ngemnv.com/'; // interim deep-link target; real ingest carries per-bid URLs
+const cache = { at: 0, payload: null };
+const TTL_MS = 5 * 60 * 1000;
 
-async function fetchNgemBids() {
-  // TODO(go-live): replace with the real NGEM read (internal JSON or scrape of
-  // the public open-solicitations list). Return objects in the normalized shape above.
-  return { mode: 'sample', bids: SAMPLE_BIDS };
+function cleanCell(html) {
+  return html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ').trim();
 }
 
-function isoFromDaysOut(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + Number(days || 0));
-  return d.toISOString().slice(0, 10);
+function dueInDays(closeStr) {
+  const m = String(closeStr || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!m) return null;
+  const due = new Date(Date.UTC(+m[3], +m[1] - 1, +m[2]));
+  return Math.ceil((due - new Date()) / 86400000);
+}
+
+function slug(s, i) {
+  return String(s || ('row' + i)).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || ('row' + i);
+}
+
+function parseBids(html) {
+  const gi = html.indexOf('rgBidList_ctl00"');
+  const seg = gi > 0 ? html.slice(gi) : html;
+  const rowRe = /id="ctl00_mainContent_rgBidList_ctl00__(\d+)"([\s\S]*?)(?=id="ctl00_mainContent_rgBidList_ctl00__\d+"|<\/table)/g;
+  const bids = [];
+  let m;
+  while ((m = rowRe.exec(seg)) !== null) {
+    const cells = [...m[2].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map(c => cleanCell(c[1]));
+    // columns: [select, Bid Number, Bid Title, Bid Type, Organization, Issue Date, Close Date/Time]
+    if (cells.length < 7) continue;
+    const solicitation_no = cells[1], title = cells[2];
+    if (!title) continue;
+    const close_date = cells[6].replace(/:00 ([AP]M)/, ' $1');
+    bids.push({
+      id: slug(solicitation_no || title, m[1]),
+      solicitation_no, title,
+      bid_type: cells[3] || '—',
+      agency: cells[4] || '—',
+      issue_date: cells[5] || '',
+      close_date,
+      due_in_days: dueInDays(cells[6]),
+    });
+  }
+  return bids;
+}
+
+async function fetchNgemBids() {
+  const res = await fetch(LIST_URL, {
+    headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml', 'Accept-Language': 'en-US,en;q=0.9' },
+  });
+  if (!res.ok) throw new Error('NGEM HTTP ' + res.status);
+  const html = await res.text();
+  const bids = parseBids(html);
+  if (!bids.length) throw new Error('NGEM parse returned 0 rows');
+  return { mode: 'live', bids };
 }
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (event.httpMethod !== 'GET')     return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: 'GET only' }) };
 
-  try {
-    const { mode, bids } = await fetchNgemBids();
-    const normalized = bids
-      .map(b => ({
-        ...b,
-        status: 'Open',
-        due_date: isoFromDaysOut(b.due_in_days),
-        // Deep link to the live solicitation on NGEM (the StateGen equivalent of CapGen's
-        // "View on SAM.gov"). Real ingest will carry each bid's true NGEM URL; until then,
-        // route to the NGEM portal so the link always lands somewhere valid.
-        url: b.url || NGEM_PORTAL,
-      }))
-      .sort((a, b) => a.due_in_days - b.due_in_days);
-
-    return {
-      statusCode: 200,
-      headers: CORS,
-      body: JSON.stringify({
-        source: 'ngem',
-        state: 'NV',
-        scanMode: mode,            // "sample" now → "live" once real ingest is wired
-        generatedAt: new Date().toISOString(),
-        count: normalized.length,
-        bids: normalized,
-      }),
-    };
-  } catch (e) {
-    return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: 'NGEM fetch failed', detail: String(e && e.message || e) }) };
+  if (cache.payload && (Date.now() - cache.at) < TTL_MS) {
+    return { statusCode: 200, headers: CORS, body: cache.payload };
   }
+
+  let mode, bids;
+  try {
+    ({ mode, bids } = await fetchNgemBids());
+  } catch (e) {
+    mode = 'sample';
+    bids = SAMPLE_BIDS.slice();
+  }
+
+  const normalized = bids
+    .map(b => ({
+      ...b,
+      status: 'Open',
+      // No per-bid GET URL on Ionwave (row-click postback), so deep-link to the live
+      // public current-bids list where the user can open this solicitation directly.
+      url: b.url || LIST_URL,
+    }))
+    .filter(b => b.due_in_days === null || b.due_in_days >= 0) // drop already-closed
+    .sort((a, b) => (a.due_in_days ?? 9999) - (b.due_in_days ?? 9999));
+
+  const payload = JSON.stringify({
+    source: 'ngem',
+    state: 'NV',
+    scanMode: mode,            // "live" when scraped, "sample" on fallback
+    generatedAt: new Date().toISOString(),
+    count: normalized.length,
+    bids: normalized,
+  });
+
+  cache.at = Date.now();
+  cache.payload = payload;
+  return { statusCode: 200, headers: CORS, body: payload };
 };

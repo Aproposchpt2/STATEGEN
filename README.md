@@ -17,18 +17,27 @@ Normalized opportunity shape:
   posted_days_ago, due_in_days, due_date, solicitation_no, url, status }
 ```
 
-## Current status — SAMPLE MODE
-`netlify/functions/ngem-pipeline.js` returns a representative Nevada bid set so the site is fully
-functional and demoable now. The front-end (`index.html`) also carries a small inline fallback so it
-renders even when opened locally without the function.
+## Current status — LIVE
+`netlify/functions/ngem-pipeline.js` scrapes NGEM's **public Current Bids** list in real time and
+returns normalized opportunities (`scanMode: "live"`). The front-end (`index.html`) also carries a
+small inline fallback so it renders even when opened locally without the function.
 
-## Go-live: wiring real NGEM data
-Replace the body of `fetchNgemBids()` in `ngem-pipeline.js` with the real read from
-[NGEM](https://www.ngemnv.com/). No API key is needed if NGEM exposes open bids without login. Order of preference:
-1. **Internal JSON** — the endpoint NGEM's public bid-list page calls (cleanest).
-2. **HTML scrape** — parse the public open-solicitations list.
+### How the live ingest works
+NGEM runs on **Ionwave** (`nevada.ionwave.net`). The public current-bids list —
+`SourcingEvents.aspx?SourceType=1` — is viewable without login; a single GET with a browser
+User-Agent returns the full Telerik grid. The function parses rows (Bid Number, Title, Type,
+Organization, Issue Date, Close Date), computes days-to-close, drops closed bids, sorts by deadline,
+and caches for 5 minutes. If the live read ever fails, it falls back to a small sample set
+(`scanMode: "sample"`) so the site stays up.
 
-When real data flows, set `scanMode` to `"live"` (the UI badge and stats follow automatically).
+**Per-bid deep link:** Ionwave opens bid details via a row-click postback (no per-bid GET URL), so
+"View on NGEM" links to the live public current-bids list where the user opens the solicitation directly.
+
+### Future enhancements
+- **Pagination** — currently ingests page 1 (soonest-closing). Add Telerik paging for the full set.
+- **NIGP categories + profile matching** — pull NIGP codes from bid detail pages to power
+  category-based matching and per-vendor alerts.
+- **Closed/Awarded** — `SourceType=2` (closed) and `SourceType=3` (awarded) are available too.
 
 ## Deploy
 GitHub → Netlify auto-deploy from `main`. Static publish (`.`) + functions in `netlify/functions`.
