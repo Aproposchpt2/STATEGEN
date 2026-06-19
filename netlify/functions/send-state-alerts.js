@@ -56,7 +56,7 @@ async function sendAlert(sub, newBids) {
 }
 
 export default async function handler() {
-  const subs = await (await sb('state_alert_subscribers?status=eq.active&select=id,email,state,keywords')).json();
+  const subs = await (await sb('state_alert_subscribers?status=eq.active&alerts_opt_in=eq.true&select=id,email,state,keywords')).json();
   const bidCache = {};
   let emailed = 0, totalNew = 0;
 

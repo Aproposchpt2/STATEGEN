@@ -1,73 +1,67 @@
 'use strict';
-// Save/update a StateGen bid-alert subscriber — HARD-GATED.
-// Accepts EITHER a verified Stripe checkout session (new/paid) OR a subscriber token
-// (returning subscriber updating keywords). No valid session/token → rejected.
-// Email + state come from the PAYMENT, not the form.
+// Onboarding / profile save — HARD-GATED.
+// Path A: a verified Stripe session (new subscriber) → save business name, keywords,
+//   alert opt-in; email + state come from the PAYMENT; issues a 30-day session token so
+//   they land straight in their dashboard.
+// Path B: a returning subscriber's token → update their profile.
 
+const crypto = require('crypto');
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const { getSession, evalSession } = require('./verify-checkout-session');
 
-const CORS = {
-  'Content-Type': 'application/json',
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
-const j = (statusCode, obj) => ({ statusCode, headers: CORS, body: JSON.stringify(obj) });
+const CORS = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
+const j = (c, o) => ({ statusCode: c, headers: CORS, body: JSON.stringify(o) });
 const sbH = (extra = {}) => ({ apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, 'Content-Type': 'application/json', ...extra });
-
-function cleanKeywords(k) {
-  const a = Array.isArray(k) ? k : String(k || '').split(',');
-  return a.map(x => String(x).trim().toLowerCase()).filter(Boolean).slice(0, 15);
-}
+const cleanKeywords = k => (Array.isArray(k) ? k : String(k || '').split(',')).map(x => String(x).trim().toLowerCase()).filter(Boolean).slice(0, 15);
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST')    return j(405, { error: 'POST only' });
 
-  let body;
-  try { body = JSON.parse(event.body || '{}'); } catch { return j(400, { error: 'Invalid JSON' }); }
-
-  const keywords = cleanKeywords(body.keywords);
+  let body; try { body = JSON.parse(event.body || '{}'); } catch { return j(400, { error: 'Invalid JSON' }); }
+  const keywords      = cleanKeywords(body.keywords);
+  const business_name = (body.business_name || '').trim() || null;
+  const alerts_opt_in = body.alerts_opt_in !== false; // default true unless explicitly false
   if (!keywords.length) return j(400, { error: 'Add at least one keyword.' });
 
   const sessionId = (body.session_id || '').trim();
   const token     = (body.token || '').trim();
 
-  // ── Path A: new/paid subscriber via verified Stripe session ──────────────
+  // ── Path A: new subscriber via verified Stripe session ──────────────
   if (sessionId) {
     if (!sessionId.startsWith('cs_')) return j(400, { error: 'Invalid checkout session.' });
     const v = evalSession(await getSession(sessionId));
     if (!v.valid) return j(403, { error: v.error || 'A paid subscription is required.' });
 
+    const session = 'ses_' + crypto.randomUUID().replace(/-/g, '');
+    const session_expires_at = new Date(Date.now() + 30 * 86400000).toISOString();
     const res = await fetch(`${SUPABASE_URL}/rest/v1/state_alert_subscribers?on_conflict=email,state`, {
       method: 'POST',
-      headers: sbH({ Prefer: 'resolution=merge-duplicates,return=representation' }),
+      headers: sbH({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
       body: JSON.stringify({
-        email: v.email, state: v.state, keywords, status: 'active',
+        email: v.email, state: v.state, keywords, business_name, alerts_opt_in, status: 'active',
         stripe_customer_id: v.customer, stripe_subscription_id: v.subscription,
-        updated_at: new Date().toISOString(),
+        session_token: session, session_expires_at, updated_at: new Date().toISOString(),
       }),
     });
     if (!res.ok) { console.error('[save-alert]', await res.text()); return j(500, { error: 'Could not save. Please try again.' }); }
-    const rows = await res.json();
-    return j(200, { ok: true, state: v.state, email: v.email, count: keywords.length, token: rows && rows[0] && rows[0].token });
+    return j(200, { ok: true, state: v.state, email: v.email, count: keywords.length, session });
   }
 
-  // ── Path B: returning subscriber updating keywords via their token ───────
+  // ── Path B: returning subscriber updating profile via token ───────
   if (token) {
+    const patch = { keywords, status: 'active', updated_at: new Date().toISOString() };
+    if (business_name) patch.business_name = business_name;
+    if ('alerts_opt_in' in body) patch.alerts_opt_in = alerts_opt_in;
     const res = await fetch(`${SUPABASE_URL}/rest/v1/state_alert_subscribers?token=eq.${encodeURIComponent(token)}`, {
-      method: 'PATCH',
-      headers: sbH({ Prefer: 'return=representation' }),
-      body: JSON.stringify({ keywords, status: 'active', updated_at: new Date().toISOString() }),
+      method: 'PATCH', headers: sbH({ Prefer: 'return=representation' }), body: JSON.stringify(patch),
     });
     if (!res.ok) { console.error('[save-alert]', await res.text()); return j(500, { error: 'Could not save. Please try again.' }); }
     const rows = await res.json();
-    if (!rows || !rows.length) return j(404, { error: 'We couldn\'t find that alert profile.' });
-    return j(200, { ok: true, state: rows[0].state, count: keywords.length, token });
+    if (!rows || !rows.length) return j(404, { error: 'We couldn\'t find that profile.' });
+    return j(200, { ok: true, state: rows[0].state, count: keywords.length });
   }
 
-  // ── No proof of subscription ─────────────────────────────────────────────
-  return j(403, { error: 'A paid subscription is required to turn on bid alerts.' });
+  return j(403, { error: 'A paid subscription is required.' });
 };
