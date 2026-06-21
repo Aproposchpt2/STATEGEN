@@ -24,9 +24,18 @@ exports.handler = async (event) => {
   const codes = await cr.json();
   if (!Array.isArray(codes) || !codes.length) return j(401, { error: 'That code is invalid or expired.' });
 
-  const token = 'ses_' + crypto.randomUUID().replace(/-/g, '');
-  const session_expires_at = new Date(Date.now() + 30 * 86400000).toISOString();
   const stateClause = (state === 'NV' || state === 'CA') ? `&state=eq.${state}` : '';
+
+  // Look up the active sub(s) first so comp (complimentary) accounts can get
+  // effectively non-expiring access, while paid sessions stay 30 days.
+  const lr = await fetch(`${SUPABASE_URL}/rest/v1/state_alert_subscribers?email=eq.${encodeURIComponent(email)}&status=eq.active${stateClause}&select=state,comp`, { headers: sbH() });
+  const lookup = await lr.json();
+  if (!Array.isArray(lookup) || !lookup.length) return j(403, { error: 'No active subscription found for that email.' });
+  const isComp = lookup.some(r => r.comp === true);
+
+  const token = 'ses_' + crypto.randomUUID().replace(/-/g, '');
+  const ttlDays = isComp ? 3650 : 30; // comp = ~10 years (open access)
+  const session_expires_at = new Date(Date.now() + ttlDays * 86400000).toISOString();
   const pr = await fetch(`${SUPABASE_URL}/rest/v1/state_alert_subscribers?email=eq.${encodeURIComponent(email)}&status=eq.active${stateClause}`, {
     method: 'PATCH', headers: sbH({ Prefer: 'return=representation' }),
     body: JSON.stringify({ session_token: token, session_expires_at }),
